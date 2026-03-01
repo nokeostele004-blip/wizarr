@@ -1,3 +1,7 @@
+import json
+import secrets
+from base64 import b64decode
+from datetime import UTC, datetime
 from pathlib import Path
 
 import requests
@@ -15,12 +19,119 @@ from flask import (
 )
 
 from app.extensions import db, limiter
-from app.models import Invitation, MediaServer, Settings, User
+from app.models import Invitation, MediaServer, QrisPayment, Settings, User
 from app.services.invites import is_invite_valid
 from app.services.media.plex import PlexInvitationError, handle_oauth_token
 
 public_bp = Blueprint("public", __name__)
 
+
+def _get_qris_subscription_config() -> dict:
+    """Load QRIS subscription settings from DB settings table."""
+    settings = {s.key: s.value for s in Settings.query.all()}
+
+    enabled = str(settings.get("qris_enabled", "false")).lower() == "true"
+    merchant_name = settings.get("qris_merchant_name") or "Wizarr Subscription"
+    payment_link = settings.get("qris_payment_link") or ""
+    qris_image_url = settings.get("qris_image_url") or ""
+
+    default_plans = [
+        {"id": "basic", "name": "Basic", "price": "Rp25.000/bulan"},
+        {"id": "standard", "name": "Standard", "price": "Rp50.000/bulan"},
+        {"id": "premium", "name": "Premium", "price": "Rp100.000/bulan"},
+    ]
+
+    plans = default_plans
+    plans_raw = settings.get("qris_plans_json")
+    if plans_raw:
+        try:
+            parsed = json.loads(plans_raw)
+            if isinstance(parsed, list) and parsed:
+                plans = [p for p in parsed if isinstance(p, dict) and p.get("id")]
+        except (json.JSONDecodeError, TypeError):
+            plans = default_plans
+
+    return {
+        "enabled": enabled,
+        "merchant_name": merchant_name,
+        "payment_link": payment_link,
+        "qris_image_url": qris_image_url,
+        "plans": plans,
+    }
+
+
+def _subscription_session_key(code: str) -> str:
+    return f"qris_subscription_selected_{code.lower()}"
+
+
+def _build_order_id(code: str) -> str:
+    nonce = secrets.token_hex(4)
+    ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    return f"WIZ-{code.upper()}-{ts}-{nonce}"
+
+
+def _build_payment_link(base_link: str, order_id: str, plan_id: str) -> str:
+    if not base_link:
+        return ""
+    link = base_link
+    link = link.replace("{order_id}", order_id)
+    link = link.replace("{plan_id}", plan_id)
+    return link
+
+
+def _get_payment_for_invite(code: str) -> QrisPayment | None:
+    selected = session.get(_subscription_session_key(code)) or {}
+    order_id = selected.get("order_id")
+    if not order_id:
+        return None
+    return QrisPayment.query.filter_by(order_id=order_id).first()
+
+
+
+
+def _extract_webhook_secret() -> str:
+    """Read webhook secret from common header styles."""
+    header_secret = request.headers.get("X-Webhook-Secret", "").strip()
+    if header_secret:
+        return header_secret
+
+    auth_header = request.headers.get("Authorization", "").strip()
+    if auth_header.lower().startswith("bearer "):
+        return auth_header[7:].strip()
+    if auth_header.lower().startswith("basic "):
+        try:
+            decoded = b64decode(auth_header[6:].strip()).decode("utf-8", errors="ignore")
+            # Accept either "secret" or "user:secret"
+            if ":" in decoded:
+                return decoded.split(":", 1)[1].strip()
+            return decoded.strip()
+        except Exception:
+            return ""
+
+    query_secret = request.args.get("secret", "").strip()
+    return query_secret
+
+
+def _parse_qris_webhook_payload() -> dict:
+    """Parse webhook payload in JSON or form-encoded body."""
+    payload = request.get_json(silent=True)
+    if isinstance(payload, dict) and payload:
+        return payload
+
+    if request.form:
+        return request.form.to_dict()
+
+    raw = request.get_data(cache=False, as_text=True) or ""
+    raw = raw.strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+
+    return {}
 
 # ─── Landing “/” ──────────────────────────────────────────────────────────────
 @public_bp.route("/")
@@ -46,11 +157,176 @@ def favicon():
 @public_bp.route("/j/<code>")
 @limiter.limit("50 per minute")
 def invite(code):
+    qris_config = _get_qris_subscription_config()
+    if qris_config["enabled"]:
+        selected = session.get(_subscription_session_key(code))
+        payment = _get_payment_for_invite(code)
+        if not selected:
+            return render_template(
+                "subscription-select.html",
+                code=code,
+                plans=qris_config["plans"],
+                merchant_name=qris_config["merchant_name"],
+                qris_image_url=qris_config["qris_image_url"],
+                payment_link=qris_config["payment_link"],
+            )
+
+        if not payment or payment.status != "paid":
+            current_payment_link = _build_payment_link(
+                qris_config["payment_link"],
+                selected.get("order_id", ""),
+                selected.get("plan_id", ""),
+            )
+            return render_template(
+                "subscription-select.html",
+                code=code,
+                plans=qris_config["plans"],
+                merchant_name=qris_config["merchant_name"],
+                qris_image_url=payment.qr_image_url if payment and payment.qr_image_url else qris_config["qris_image_url"],
+                payment_link=current_payment_link,
+                selected_plan_id=selected.get("plan_id"),
+                order_id=selected.get("order_id"),
+                payment_status=payment.status if payment else "pending",
+                waiting_for_webhook=True,
+            )
+
     from app.services.invitation_flow import InvitationFlowManager
 
     manager = InvitationFlowManager()
     result = manager.process_invitation_display(code)
     return result.to_flask_response()
+
+
+@public_bp.route("/j/<code>/subscription", methods=["POST"])
+@limiter.limit("20 per minute")
+def select_subscription(code):
+    """Persist selected plan and create pending order before invitation flow."""
+    qris_config = _get_qris_subscription_config()
+    if not qris_config["enabled"]:
+        return redirect(url_for("public.invite", code=code))
+
+    selected_plan = request.form.get("plan_id", "").strip()
+    valid_plan_ids = {str(plan.get("id")) for plan in qris_config["plans"]}
+
+    if not selected_plan or selected_plan not in valid_plan_ids:
+        return render_template(
+            "subscription-select.html",
+            code=code,
+            plans=qris_config["plans"],
+            merchant_name=qris_config["merchant_name"],
+            qris_image_url=qris_config["qris_image_url"],
+            payment_link=qris_config["payment_link"],
+            error="Silakan pilih paket langganan terlebih dahulu.",
+        )
+
+    existing = _get_payment_for_invite(code)
+    if existing and existing.status != "paid":
+        payment = existing
+    else:
+        order_id = _build_order_id(code)
+        payment = QrisPayment(
+            order_id=order_id,
+            invite_code=code,
+            plan_id=selected_plan,
+            status="pending",
+            payload_json=json.dumps({"source": "wizarr_subscription_select"}),
+        )
+        db.session.add(payment)
+        db.session.commit()
+
+    session[_subscription_session_key(code)] = {
+        "plan_id": selected_plan,
+        "payment_method": "qris",
+        "order_id": payment.order_id,
+    }
+
+    return redirect(url_for("public.invite", code=code))
+
+
+@public_bp.route("/j/<code>/continue", methods=["POST"])
+@limiter.limit("20 per minute")
+def continue_after_payment(code):
+    """Continue invite flow only when webhook marks payment as paid."""
+    payment = _get_payment_for_invite(code)
+    if payment and payment.status == "paid":
+        return redirect(url_for("public.invite", code=code))
+
+    qris_config = _get_qris_subscription_config()
+    return render_template(
+        "subscription-select.html",
+        code=code,
+        plans=qris_config["plans"],
+        merchant_name=qris_config["merchant_name"],
+        qris_image_url=payment.qr_image_url if payment and payment.qr_image_url else qris_config["qris_image_url"],
+        payment_link=_build_payment_link(
+            qris_config["payment_link"],
+            payment.order_id if payment else "",
+            payment.plan_id if payment else "",
+        ),
+        selected_plan_id=payment.plan_id if payment else None,
+        order_id=payment.order_id if payment else None,
+        payment_status=payment.status if payment else "pending",
+        waiting_for_webhook=True,
+        error="Pembayaran belum terkonfirmasi. Pastikan webhook payment.paid sudah terkirim.",
+    )
+
+
+@public_bp.route("/webhooks/qris", methods=["GET", "POST"])
+@limiter.limit("120 per minute")
+def qris_webhook():
+    """Receive QRIS payment webhook and update order status."""
+    if request.method == "GET":
+        return jsonify({"ok": True, "message": "QRIS webhook endpoint ready"}), 200
+
+    secret_setting = Settings.query.filter_by(key="qris_webhook_secret").first()
+    expected_secret = secret_setting.value if secret_setting and secret_setting.value else ""
+    if expected_secret:
+        incoming_secret = _extract_webhook_secret()
+        if incoming_secret != expected_secret:
+            return jsonify({"ok": False, "error": "Invalid webhook secret"}), 401
+
+    payload = _parse_qris_webhook_payload()
+    event = payload.get("event")
+    order_id = payload.get("order_id")
+
+    if not order_id:
+        return jsonify({"ok": False, "error": "Missing order_id"}), 400
+
+    payment = QrisPayment.query.filter_by(order_id=order_id).first()
+    if not payment:
+        payment = QrisPayment(order_id=order_id, invite_code="unknown", status="pending")
+        db.session.add(payment)
+
+    status_map = {
+        "payment.paid": "paid",
+        "payment.pending": "pending",
+        "payment.expired": "expired",
+    }
+    payment.status = status_map.get(event, payload.get("status") or payment.status)
+    payment.transaction_id = payload.get("transaction_id") or payment.transaction_id
+    payment.amount = payload.get("amount") or payment.amount
+    payment.customer_name = payload.get("customer_name") or payment.customer_name
+    payment.customer_phone = payload.get("customer_phone") or payment.customer_phone
+    payment.merchant_id = payload.get("merchant_id") or payment.merchant_id
+    payment.merchant_name = payload.get("merchant_name") or payment.merchant_name
+    payment.qr_image_url = payload.get("qr_image_url") or payment.qr_image_url
+    paid_at_raw = payload.get("paid_at")
+    if paid_at_raw:
+        try:
+            payment.paid_at = datetime.strptime(paid_at_raw, "%Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+        except ValueError:
+            pass
+    payment.payload_json = json.dumps(payload)
+
+    if payment.invite_code == "unknown":
+        # keep compatibility if webhook received before app-created pending row
+        embedded_code = str(order_id).split("-")
+        if len(embedded_code) >= 2 and embedded_code[0] == "WIZ":
+            payment.invite_code = embedded_code[1].lower()
+
+    db.session.commit()
+
+    return jsonify({"ok": True, "event": event, "order_id": order_id, "status": payment.status})
 
 
 # ─── Unified invitation processing ─────────────────────────────────────────

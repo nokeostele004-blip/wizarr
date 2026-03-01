@@ -53,6 +53,33 @@ Wizarr provides a comprehensive REST API for automation and integration with **a
 📖 **Interactive API Documentation**: `http://your-wizarr-instance/api/docs/`  
 📋 **OpenAPI Specification**: `http://your-wizarr-instance/api/swagger.json`
 
+
+## 💳 QRIS Subscription Gate (Custom)
+
+Instalasi ini sekarang mendukung *subscription gate* sebelum link undangan `/j/<code>` diproses: user harus memilih paket langganan terlebih dahulu, lalu melihat opsi pembayaran QRIS.
+
+Konfigurasi dilakukan dari **Settings → General** dengan field berikut:
+- `qris_enabled`
+- `qris_merchant_name`
+- `qris_payment_link`
+- `qris_image_url`
+- `qris_plans_json` (JSON array, contoh: `[{"id":"basic","name":"Basic","price":"Rp25.000/bulan"}]`)
+- `qris_webhook_secret` (opsional, validasi keamanan webhook)
+
+Saat aktif, flow menjadi:
+1. User buka `/j/<code>`
+2. User pilih paket langganan (Wizarr membuat `order_id`)
+3. User bayar via QRIS (tautan bisa pakai placeholder `{order_id}` dan `{plan_id}`)
+4. QRIS provider kirim webhook ke `POST /webhooks/qris`
+5. Setelah status `payment.paid` diterima, user bisa lanjut ke flow undangan Wizarr normal
+
+Contoh event webhook yang didukung:
+- `payment.paid`
+- `payment.pending`
+- `payment.expired`
+
+Jika Anda set `qris_webhook_secret`, endpoint webhook akan memverifikasi header `X-Webhook-Secret`.
+
 ---
 
 ## Sponsorship

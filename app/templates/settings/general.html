@@ -82,6 +82,58 @@
                 </div>
               </div>
             </div>
+            {# ───── QRIS Subscription Gate ─────────────────────── #}
+            <div class="space-y-4">
+              <div class="border-b border-gray-200 dark:border-gray-700 pb-3">
+                <div class="flex items-center gap-3">
+                  <div class="flex-shrink-0 w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+                    <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 9V7a5 5 0 00-10 0v2m-2 0h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2v-8a2 2 0 012-2z"/>
+                    </svg>
+                  </div>
+                  <div>
+                    <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ _("QRIS Subscription") }}</h2>
+                    <p class="text-sm text-gray-600 dark:text-gray-400">{{ _("Require users to choose a subscription and pay via QRIS before opening invite flow") }}</p>
+                  </div>
+                </div>
+              </div>
+              <div class="space-y-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <label class="text-sm font-medium text-gray-900 dark:text-white">{{ form.qris_enabled.label.text }}</label>
+                    <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">{{ _("When enabled, invitation links show plan selection + QRIS payment info first") }}</p>
+                  </div>
+                  <label class="inline-flex items-center cursor-pointer">
+                    {{ form.qris_enabled(class="sr-only peer") }}
+                    <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-primary/20 dark:peer-focus:ring-primary/30 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-primary dark:peer-checked:bg-primary"></div>
+                  </label>
+                </div>
+                <div>
+                  {{ form.qris_merchant_name.label(class="block mb-2 text-sm font-medium text-gray-900 dark:text-white") }}
+                  {{ form.qris_merchant_name(class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white", placeholder="Nama merchant") }}
+                </div>
+                <div>
+                  {{ form.qris_payment_link.label(class="block mb-2 text-sm font-medium text-gray-900 dark:text-white") }}
+                  {{ form.qris_payment_link(class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white", placeholder="https://payment.example.com") }}
+                </div>
+                <div>
+                  {{ form.qris_image_url.label(class="block mb-2 text-sm font-medium text-gray-900 dark:text-white") }}
+                  {{ form.qris_image_url(class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white", placeholder="https://.../qris.png") }}
+                </div>
+                <div>
+                  {{ form.qris_plans_json.label(class="block mb-2 text-sm font-medium text-gray-900 dark:text-white") }}
+                  {{ form.qris_plans_json(class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white", rows="5", placeholder='[{"id":"basic","name":"Basic","price":"Rp25.000/bulan"}]') }}
+                  <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">{{ _("Format: array JSON dengan id, name, dan price") }}</p>
+                </div>
+                <div>
+                  {{ form.qris_webhook_secret.label(class="block mb-2 text-sm font-medium text-gray-900 dark:text-white") }}
+                  {{ form.qris_webhook_secret(class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-primary focus:border-primary block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white", placeholder="optional-secret-token") }}
+                  <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">{{ _("Jika diisi, endpoint webhook akan memverifikasi header X-Webhook-Secret") }}</p>
+                  <p class="text-xs text-gray-600 dark:text-gray-400 mt-1">Webhook URL: <code>/webhooks/qris</code></p>
+                </div>
+              </div>
+            </div>
+
             {# ───── User Management ──────────────────────────── #}
             <div class="space-y-4">
               <div class="border-b border-gray-200 dark:border-gray-700 pb-3">
