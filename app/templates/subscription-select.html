@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Pilih Langganan{% endblock title %}
+{% block main %}
+  <section class="min-h-screen bg-gray-100 dark:bg-slate-900 py-8 px-4">
+    <div class="max-w-3xl mx-auto">
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow border border-gray-200 dark:border-gray-700 p-6">
+        <h1 class="text-2xl font-bold text-gray-900 dark:text-white mb-2">Pilih Paket Langganan</h1>
+        <p class="text-sm text-gray-600 dark:text-gray-400 mb-6">
+          Silakan pilih paket terlebih dahulu, lalu lanjutkan pembayaran via QRIS sebelum membuat akun Wizarr.
+        </p>
+
+        {% if error %}
+          <div class="mb-4 p-3 rounded-lg bg-red-50 text-red-700 border border-red-200">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('public.select_subscription', code=code) }}" class="space-y-4">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {% for plan in plans %}
+              <label class="cursor-pointer border border-gray-300 dark:border-gray-600 rounded-lg p-4 hover:border-primary block {% if selected_plan_id == plan.id %}ring-2 ring-primary{% endif %}">
+                <input type="radio" name="plan_id" value="{{ plan.id }}" class="mr-2" required {% if selected_plan_id == plan.id %}checked{% endif %}>
+                <div class="font-semibold text-gray-900 dark:text-white">{{ plan.name }}</div>
+                <div class="text-sm text-gray-600 dark:text-gray-300">{{ plan.price }}</div>
+              </label>
+            {% endfor %}
+          </div>
+
+          <button type="submit" class="w-full md:w-auto px-5 py-2.5 bg-primary text-white rounded-lg hover:bg-primary_hover">
+            Buat / Ganti Order Pembayaran QRIS
+          </button>
+        </form>
+
+        <div class="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Pembayaran QRIS</h2>
+          <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Merchant: {{ merchant_name }}</p>
+
+          {% if order_id %}
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-200">Order ID: <span class="font-mono">{{ order_id }}</span></p>
+          {% endif %}
+
+          {% if payment_status %}
+            <p class="mt-2 text-sm">
+              Status pembayaran:
+              <span class="font-semibold {% if payment_status == 'paid' %}text-emerald-600{% elif payment_status == 'expired' %}text-red-600{% else %}text-amber-600{% endif %}">
+                {{ payment_status|upper }}
+              </span>
+            </p>
+          {% endif %}
+
+          {% if qris_image_url %}
+            <img src="{{ qris_image_url }}" alt="QRIS" class="mt-4 w-64 max-w-full rounded-lg border border-gray-200 dark:border-gray-600">
+          {% endif %}
+
+          {% if payment_link %}
+            <a href="{{ payment_link }}" target="_blank" rel="noopener" class="inline-block mt-4 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700">
+              Buka Link Pembayaran
+            </a>
+          {% else %}
+            <p class="mt-3 text-sm text-amber-700 dark:text-amber-400">Link pembayaran belum diatur di Settings.</p>
+          {% endif %}
+
+          {% if waiting_for_webhook %}
+            <form method="post" action="{{ url_for('public.continue_after_payment', code=code) }}">
+              <button type="submit" class="inline-block mt-4 ml-0 md:ml-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+                Saya Sudah Bayar, Lanjutkan
+              </button>
+            </form>
+            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Tombol ini hanya berhasil jika webhook <code>payment.paid</code> sudah diterima Wizarr.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </section>
+{% endblock main %}

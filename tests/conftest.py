@@ -81,6 +81,7 @@ def session(app):
         Invitation,
         Library,
         MediaServer,
+        QrisPayment,
         Settings,
         User,
         WebAuthnCredential,
@@ -112,6 +113,7 @@ def session(app):
         db.session.query(ApiKey).delete()
         # Now safe to delete AdminAccount
         db.session.query(AdminAccount).delete()
+        db.session.query(QrisPayment).delete()
         db.session.query(Settings).delete()
         db.session.commit()
 
@@ -141,6 +143,7 @@ def session(app):
         db.session.query(ApiKey).delete()
         # Now safe to delete AdminAccount
         db.session.query(AdminAccount).delete()
+        db.session.query(QrisPayment).delete()
         db.session.query(Settings).delete()
         db.session.commit()
 
