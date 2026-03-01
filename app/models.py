@@ -165,6 +165,30 @@ class Invitation(db.Model):
         return user in list(self.users)
 
 
+
+
+class QrisPayment(db.Model):
+    __tablename__ = "qris_payment"
+
+    id = db.Column(db.Integer, primary_key=True)
+    order_id = db.Column(db.String, unique=True, nullable=False, index=True)
+    invite_code = db.Column(db.String, nullable=False, index=True)
+    plan_id = db.Column(db.String, nullable=True)
+    status = db.Column(db.String, nullable=False, default="pending")
+    amount = db.Column(db.Integer, nullable=True)
+    transaction_id = db.Column(db.String, nullable=True)
+    customer_name = db.Column(db.String, nullable=True)
+    customer_phone = db.Column(db.String, nullable=True)
+    merchant_id = db.Column(db.String, nullable=True)
+    merchant_name = db.Column(db.String, nullable=True)
+    qr_image_url = db.Column(db.String, nullable=True)
+    paid_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(UTC), nullable=False)
+    updated_at = db.Column(
+        db.DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC), nullable=False
+    )
+    payload_json = db.Column(db.Text, nullable=True)
+
 class Settings(db.Model):
     __tablename__ = "settings"
     id = db.Column(db.Integer, primary_key=True)
