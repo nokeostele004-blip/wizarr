@@ -462,7 +462,7 @@ def _get_server_type_from_invitation(invitation: Invitation) -> str | None:
     """
     # Priority 1: Check new many-to-many relationship
     if hasattr(invitation, "servers") and invitation.servers:
-        return invitation.servers[0].server_type
+        return invitation.servers[0].server_type  # type: ignore
 
     # Priority 2: Check legacy single server relationship (backward compatibility)
     if hasattr(invitation, "server") and invitation.server:
@@ -516,7 +516,7 @@ def _get_server_colors(server_type: str | None) -> dict[str, str]:
     }
 
     # Return server-specific colors or default to Plex colors
-    return color_schemes.get(
+    return color_schemes.get(  # type: ignore
         server_type,
         color_schemes["plex"],
     )
@@ -843,14 +843,14 @@ def complete():
     invite_code = InviteCodeManager.get_invite_code()
     media_server_url = None
     if invite_code:
-        _, invitation = InviteCodeManager.validate_invite_code(invite_code)
+        _valid, invitation = InviteCodeManager.validate_invite_code(invite_code)
         if invitation:
             # Prefer multi-server list, fall back to single server
             servers = invitation.servers or (
                 [invitation.server] if invitation.server else []
             )
             if servers:
-                srv = servers[0]
+                srv = servers[0]  # type: ignore
                 media_server_url = srv.external_url or srv.url
 
     # Clear all invitation-related session data
@@ -987,10 +987,19 @@ def combo(category: str, idx: int = 0):
     completion_label = _("Continue to Invite") if phase == "pre" else None
 
     # Concatenate steps preserving order AND track which server each step belongs to
+    # Deduplicate server types: steps are defined per type, not per instance,
+    # so 2 Plex servers should not produce 2× the default Plex steps.
+    seen_types: set[str] = set()
+    unique_order: list[str] = []
+    for t in order:
+        if t not in seen_types:
+            seen_types.add(t)
+            unique_order.append(t)
+
     steps: list = []
     step_server_mapping: list = []  # Track which server type each step belongs to
 
-    for stype in order:
+    for stype in unique_order:
         # Get steps for this server type with the specified category
         try:
             server_steps = _steps(stype, cfg, category=category)
@@ -1160,7 +1169,7 @@ def bundle_view(idx: int):
     try:
         ordered = (
             WizardBundleStep.query.filter_by(bundle_id=bundle_id)
-            .options(joinedload(WizardBundleStep.step))
+            .options(joinedload(WizardBundleStep.step))  # type: ignore
             .order_by(WizardBundleStep.position)
             .all()
         )
@@ -1331,7 +1340,7 @@ def bundle_preview(bundle_id: int, idx: int):
     try:
         ordered = (
             WizardBundleStep.query.filter_by(bundle_id=bundle_id)
-            .options(joinedload(WizardBundleStep.step))
+            .options(joinedload(WizardBundleStep.step))  # type: ignore
             .order_by(WizardBundleStep.position)
             .all()
         )
